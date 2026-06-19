@@ -22,12 +22,13 @@ To capture a reliable record of the number of changed files in Drupal every mont
 3. It queries a Drupal View via JSON API to get the number of changed files per Parks site
 4. It compiles the results into a single JSON object to send to Drupal
 5. It submits a JSON API `POST` request to create a new 'Reporting entries' Taxonomy term in Drupal
+6. Responses are logged and saved locally under /logs/, then compressed and optionally submitted to an AWS S3 bucket.
 
 The figures for that month is then available in Drupal as a Taxonomy term to be used in Views or however it's needed. You could send it elsewhere via JSON API if you wanted. 
 
 ## Logs
 
-A record of each run of the app is stored under `/logs/reporter-*`.
+A record of each run of the app is stored under `/logs`.
 
 ## Environment variables
 
@@ -35,6 +36,8 @@ A record of each run of the app is stored under `/logs/reporter-*`.
 - `DRUPAL_DOMAIN` - string - The full URL of the Drupal site.
 - `DEBUG_MODE` - boolean - Enabled debugging output in the logs when the app runs. Disabled by default.
 - `LOCAL_ENV` - boolean - Disables SSL verification checks to make life easier when testing against a local site.
+- `AWS_PROFILE` - string - The AWS user account to use (must have credentials saved locally).
+- `S3_BUCKET` - string - The name of the S3 bucket in which you want your logs saved.
 
 ## JSON API data structure
 
