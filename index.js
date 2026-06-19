@@ -17,9 +17,13 @@ const fs = require("fs");
 const util = require("util");
 
 const apiKey = process.env.DRUPAL_API_KEY,
-drupalSite = process.env.DRUPAL_DOMAIN,
-debugMode = isStrTrue(process.env.DEBUG_MODE) || false,
-localEnv = isStrTrue(process.env.LOCAL_ENV) || false;
+  drupalSite = process.env.DRUPAL_DOMAIN,
+  s3bucket = process.env.S3_BUCKET,
+  debugMode = isStrTrue(process.env.DEBUG_MODE) || false,
+  localEnv = process.env.NODE_ENV === 'production' ? false : true,
+  time = new Date().toISOString().slice(0, 19).replaceAll(":", "-"),
+  logFileName = `/logs/parks-websites-publishing-reporter-logs-${time}UTC.log`;
+  logFileWithPath = __dirname + logFileName;
 
 function isStrTrue(str) {
   return str === "true" ? true : false;
@@ -27,6 +31,7 @@ function isStrTrue(str) {
 
 // Ignore SSL issues for local testing
 if (localEnv) {
+  console.debug('Local environment detected, ignoring SSL certificate issues for fetch requests...');
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
@@ -76,11 +81,7 @@ const year = startDate.slice(6, 10),
   };
 
 // Capture the script output in logs
-const time = new Date().toISOString().slice(0, 19).replaceAll(":", "-");
-let log_file = fs.createWriteStream(
-  __dirname + `/logs/reporter-${time}UTC.log`,
-  { flags: "w" }
-);
+let log_file = fs.createWriteStream(logFileWithPath, { flags: "w" });
 let log_stdout = process.stdout;
 // Remap console.log to write to the log file
 console.log = function (d) {
@@ -119,6 +120,11 @@ if (!drupalSite) {
     "Drupal domain not found in environment variables, quitting..."
   );
   return;
+}
+if (!s3bucket) {
+  console.warn(
+    "S3 bucket not found in environment variables. Logs will be saved locally but not uploaded to S3!",
+  );
 }
 
 const domain = drupalSite;
@@ -270,13 +276,9 @@ Promise.all([allowNewTerm()])
       );
     } else {
       console.error(
-        `Issue encountered while attempting to create reporting term:`
-      );
-      console.error(
-        `Drupal response: ${drupalResponse.status}: ${drupalResponse.statusText}`
+        `Issue encountered while attempting to create reporting term: ${drupalResponse.status}: ${drupalResponse.statusText}`,
       );
     }
-    console.log("Script complete!");
   })
   .catch((error) => {
     console.error(error);
