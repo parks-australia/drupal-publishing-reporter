@@ -18,12 +18,14 @@ const util = require("util");
 
 const apiKey = process.env.DRUPAL_API_KEY,
   drupalSite = process.env.DRUPAL_DOMAIN,
+  awsProfile = process.env.AWS_PROFILE,
   s3bucket = process.env.S3_BUCKET,
   debugMode = isStrTrue(process.env.DEBUG_MODE) || false,
   localEnv = process.env.NODE_ENV === "production" ? false : true,
   time = new Date().toISOString().slice(0, 19).replaceAll(":", "-"),
-  logFileName = `/logs/parks-websites-publishing-reporter-logs-${time}UTC.log`,
-  logFileWithPath = __dirname + logFileName;
+  log = `parks-websites-publishing-reporter-logs-${time}UTC.log`,
+  logFileName = debugMode ? `DEBUG-${log}` : log,
+  logFileWithPath = __dirname + "/logs/" + logFileName;
 
 function isStrTrue(str) {
   return str === "true" ? true : false;
@@ -116,13 +118,29 @@ console.dir = function (d) {
 const sendLogsToS3bucket = async () => {
   console.log("Sending logfile to S3 bucket...");
   return new Promise((resolve, reject) => {
+    // Compress the log file
+    const compressedFileName = `${logFileName}.tar.gz`;
+    const compressedFilePath = `${logsDir}/${compressedFileName}`;
+
+    // Create tar.gz of the log file
+    const tarCommand = `tar -czf "${compressedFilePath}" -C "${logsDir}" "${logFileName}"`;
+    const tarResult = shell.exec(tarCommand, { silent: true });
+
+    if (tarResult.code !== 0) {
+      reject(new Error(`Failed to compress log file: ${tarResult.stderr}`));
+      return;
+    }
+
+    // Upload the compressed file to S3
     shell.exec(
-      `aws s3 cp ${logFileWithPath} s3://${s3bucket}${logFileName} --region ap-southeast-2`,
+      `aws s3 cp "${compressedFilePath}" s3://${s3bucket}/${compressedFileName} --region ap-southeast-2 --profile ${awsProfile}`,
       (code, stdout, stderr) => {
         if (code !== 0) {
           reject(new Error(`S3 upload failed with code ${code}: ${stderr}`));
         } else {
-          resolve("Logs uploaded to S3 bucket successfully!");
+          // Delete the original uncompressed log file, keep the compressed version
+          shell.exec(`rm "${logFileWithPath}"`, { silent: true });
+          resolve("Logs compressed and uploaded to S3 bucket successfully!");
         }
       },
     );
@@ -170,7 +188,10 @@ if (!s3bucket) {
 }
 console.log("Testing AWS S3 access...");
 const options = debugMode ? {} : { silent: true };
-if (shell.exec("aws sts get-caller-identity", options).code !== 0) {
+if (
+  shell.exec(`aws sts get-caller-identity --profile ${awsProfile}`, options)
+    .code !== 0
+) {
   console.warn("No access to AWS S3, logs will only be saved locally!");
 } else {
   console.log("AWS access confirmed.");

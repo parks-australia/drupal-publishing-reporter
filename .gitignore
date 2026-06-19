@@ -1,6 +1,7 @@
 # ignore 
 node_modules
 reporter-history.log
-logs/reporter-*
+logs/*
 .env
 .env*
+!.env.example
