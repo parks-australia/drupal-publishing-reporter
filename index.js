@@ -20,9 +20,9 @@ const apiKey = process.env.DRUPAL_API_KEY,
   drupalSite = process.env.DRUPAL_DOMAIN,
   s3bucket = process.env.S3_BUCKET,
   debugMode = isStrTrue(process.env.DEBUG_MODE) || false,
-  localEnv = process.env.NODE_ENV === 'production' ? false : true,
+  localEnv = process.env.NODE_ENV === "production" ? false : true,
   time = new Date().toISOString().slice(0, 19).replaceAll(":", "-"),
-  logFileName = `/logs/parks-websites-publishing-reporter-logs-${time}UTC.log`;
+  logFileName = `/logs/parks-websites-publishing-reporter-logs-${time}UTC.log`,
   logFileWithPath = __dirname + logFileName;
 
 function isStrTrue(str) {
@@ -31,7 +31,9 @@ function isStrTrue(str) {
 
 // Ignore SSL issues for local testing
 if (localEnv) {
-  console.debug('Local environment detected, ignoring SSL certificate issues for fetch requests...');
+  console.debug(
+    "Local environment detected, ignoring SSL certificate issues for fetch requests...",
+  );
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
@@ -80,6 +82,12 @@ const year = startDate.slice(6, 10),
     end: `${year}-${month}-${lastDay} 23:59:59`,
   };
 
+// Ensure logs directory exists
+const logsDir = __dirname + "/logs";
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
 // Capture the script output in logs
 let log_file = fs.createWriteStream(logFileWithPath, { flags: "w" });
 let log_stdout = process.stdout;
@@ -105,8 +113,42 @@ console.dir = function (d) {
   log_stdout.write(`${util.format(d)}\n`);
 };
 
+const sendLogsToS3bucket = async () => {
+  console.log("Sending logfile to S3 bucket...");
+  return new Promise((resolve, reject) => {
+    shell.exec(
+      `aws s3 cp ${logFileWithPath} s3://${s3bucket}${logFileName} --region ap-southeast-2`,
+      (code, stdout, stderr) => {
+        if (code !== 0) {
+          reject(new Error(`S3 upload failed with code ${code}: ${stderr}`));
+        } else {
+          resolve("Logs uploaded to S3 bucket successfully!");
+        }
+      },
+    );
+  });
+};
+
+const quit = async (code = 0) => {
+  try {
+    // Stop accepting writes and wait for data to flush
+    log_file.end();
+    await new Promise((resolve) => log_file.on("finish", resolve));
+
+    // Upload logs if configured (ensure this function returns a Promise)
+    if (s3bucket) {
+      await sendLogsToS3bucket();
+    }
+  } catch (e) {
+    // Print to stdout (not the log stream which is closed)
+    process.stdout.write("Error during shutdown: " + e + "\n");
+  } finally {
+    process.exit(code);
+  }
+};
+
 console.log(
-  `Running Drupal Publishing Reporter for ${year}-${month} at ${new Date().toISOString()} UTC...`
+  `Running Drupal Publishing Reporter for ${year}-${month} at ${new Date().toISOString()} UTC...`,
 );
 
 debugMode && console.debug("Debugging enabled!");
@@ -117,7 +159,7 @@ if (!apiKey) {
 }
 if (!drupalSite) {
   console.error(
-    "Drupal domain not found in environment variables, quitting..."
+    "Drupal domain not found in environment variables, quitting...",
   );
   return;
 }
@@ -125,6 +167,13 @@ if (!s3bucket) {
   console.warn(
     "S3 bucket not found in environment variables. Logs will be saved locally but not uploaded to S3!",
   );
+}
+console.log("Testing AWS S3 access...");
+const options = debugMode ? {} : { silent: true };
+if (shell.exec("aws sts get-caller-identity", options).code !== 0) {
+  console.warn("No access to AWS S3, logs will only be saved locally!");
+} else {
+  console.log("AWS access confirmed.");
 }
 
 const domain = drupalSite;
@@ -140,9 +189,9 @@ let sitesList = [
     "uktnp",
   ],
   reportUrl = `${domain}/jsonapi/views/publishing_report/default?views-filter%5Bchanged%5D%5Bmin%5D=${encodeURI(
-    dateRange.start
+    dateRange.start,
   )}&views-filter%5Bchanged%5D%5Bmax%5D=${encodeURI(
-    dateRange.end
+    dateRange.end,
   )}&views-filter%5Bfield_site_target_id%5D=`;
 
 const structure = {
@@ -180,18 +229,20 @@ const fetchJsonData = async (url) => {
 
 // As Drupal's JSON API caches rather aggressively, flush the cache first to
 // guarantee clean data
-console.log('Flushing Drupal PROD site cache to guarantee clean JSON API data...');
+console.log(
+  "Flushing Drupal PROD site cache to guarantee clean JSON API data...",
+);
 if (
   shell.exec("terminus remote:drush parksaustralia-cms.live -- cr").code !== 0
 ) {
   console.error("Failed to rebuild caches, quitting...");
-  return
-} else { 
+  return;
+} else {
   console.log("Rebuilt Drupal's caches successfully!");
 }
 
 console.log(
-  `Checking if term '${year}-${month}' already exists in Drupal's 'Reporting entries' taxonomy...`
+  `Checking if term '${year}-${month}' already exists in Drupal's 'Reporting entries' taxonomy...`,
 );
 
 async function allowNewTerm() {
@@ -227,10 +278,12 @@ async function getSiteChangesData(data, site) {
 }
 
 // Only request the rest of the data if the record doesn't exist in Drupal
-Promise.all([allowNewTerm()])
-  .then(async () => {
+(async () => {
+  try {
+    await Promise.all([allowNewTerm()]);
+
     console.log(
-      `Gathering changed pages for each site from ${dateRange.start} to ${dateRange.end}...`
+      `Gathering changed pages for each site from ${dateRange.start} to ${dateRange.end}...`,
     );
 
     for (let i = 0; i < sitesList.length; i++) {
@@ -255,8 +308,6 @@ Promise.all([allowNewTerm()])
       "api-key": `${apiKey}`,
     };
 
-    // Only submit report if successful
-
     // Build the Fetch POST request to send data to Drupal to create a new
     // reporting Taxonomy Term
     const drupalPost = await fetch(
@@ -265,21 +316,25 @@ Promise.all([allowNewTerm()])
         method: "POST",
         headers: headers,
         body: JSON.stringify(structure),
-      }
+      },
     );
 
     const drupalResponse = await drupalPost;
 
     if (parseInt(drupalResponse.status) === 201) {
       console.log(
-        `Reporting term '${structure.data.attributes.name}' created successfully!`
+        `Reporting term '${structure.data.attributes.name}' created successfully!`,
       );
+      console.log("Script complete!");
+      await quit(0);
     } else {
       console.error(
         `Issue encountered while attempting to create reporting term: ${drupalResponse.status}: ${drupalResponse.statusText}`,
       );
+      await quit(1);
     }
-  })
-  .catch((error) => {
+  } catch (error) {
     console.error(error);
-  });
+    await quit(1);
+  }
+})();
