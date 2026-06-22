@@ -7,6 +7,10 @@ Captures the changed files in Drupal every month, then creates Taxonomy Terms in
 - A Drupal user account API key with publishing access to the 'Reporting Entries' Taxonomy
 - an `.env` file containing the variables mentioned below
 
+**Optional**
+
+- AWS CLI access with a valid credentials file
+
 ## How it works
 
 Drupal stores the 'last updated' date for Nodes (Pages, Events, News Articles etc), which is changed whenever the node is saved. This means if a page is updated on 30 June and again on 1 July, it will only appear as having being modified in July even though it was legitimately modified twice. This makes it hard to capture the amount of work done to the site.
@@ -28,7 +32,7 @@ The figures for that month is then available in Drupal as a Taxonomy term to be 
 
 ## Logs
 
-A record of each run of the app is stored under `/logs`.
+A record of each run of the app is stored under `/logs`. Runs with `DEBUG_MODE` enabled are prefixed with `DEBUG - <logname>`.
 
 ## Environment variables
 
@@ -36,7 +40,7 @@ A record of each run of the app is stored under `/logs`.
 - `DRUPAL_DOMAIN` - string - The full URL of the Drupal site.
 - `DEBUG_MODE` - boolean - Enabled debugging output in the logs when the app runs. Disabled by default.
 - `LOCAL_ENV` - boolean - Disables SSL verification checks to make life easier when testing against a local site.
-- `AWS_PROFILE` - string - The AWS user account to use (must have credentials saved locally).
+- `AWS_PROFILE` - string - The AWS user account to use (must have credentials saved locally). Defaults to 'default' if ommitted or empty.
 - `S3_BUCKET` - string - The name of the S3 bucket in which you want your logs saved.
 
 ## JSON API data structure

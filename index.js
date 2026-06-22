@@ -23,6 +23,7 @@ const apiKey = process.env.DRUPAL_API_KEY,
   debugMode = isStrTrue(process.env.DEBUG_MODE) || false,
   localEnv = process.env.NODE_ENV === "production" ? false : true,
   time = new Date().toISOString().slice(0, 19).replaceAll(":", "-"),
+  awsProfileFlag = awsProfile ? `--profile ${awsProfile}` : '',
   log = `parks-websites-publishing-reporter-logs-${time}UTC.log`,
   logFileName = debugMode ? `DEBUG-${log}` : log,
   logFileWithPath = __dirname + "/logs/" + logFileName;
@@ -133,7 +134,7 @@ const sendLogsToS3bucket = async () => {
 
     // Upload the compressed file to S3
     shell.exec(
-      `aws s3 cp "${compressedFilePath}" s3://${s3bucket}/${compressedFileName} --region ap-southeast-2 --profile ${awsProfile}`,
+      `aws s3 cp "${compressedFilePath}" s3://${s3bucket}/${compressedFileName} --region ap-southeast-2 ${awsProfileFlag}`,
       (code, stdout, stderr) => {
         if (code !== 0) {
           reject(new Error(`S3 upload failed with code ${code}: ${stderr}`));
@@ -171,6 +172,9 @@ console.log(
 
 debugMode && console.debug("Debugging enabled!");
 
+debugMode && awsProfile && console.debug(`Using AWS_PROFILE ${awsProfile}`);
+debugMode && !awsProfile && console.debug(`AWS_PROFILE env variable not found, using '[default]' aws credentials, if set.`);
+
 if (!apiKey) {
   console.error("API key not found in environment variables, quitting...");
   return;
@@ -189,7 +193,7 @@ if (!s3bucket) {
 console.log("Testing AWS S3 access...");
 const options = debugMode ? {} : { silent: true };
 if (
-  shell.exec(`aws sts get-caller-identity --profile ${awsProfile}`, options)
+  shell.exec(`aws sts get-caller-identity ${awsProfileFlag}`, options)
     .code !== 0
 ) {
   console.warn("No access to AWS S3, logs will only be saved locally!");
